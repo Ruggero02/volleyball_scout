@@ -1,0 +1,15 @@
+# Ambiente virtuale
+.venv/
+
+# Database locale
+db.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+
+# File di ambiente
+.env
+
+# IDE
+.vscode/
