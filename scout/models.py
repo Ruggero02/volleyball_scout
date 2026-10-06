@@ -48,6 +48,14 @@ class Set(models.Model):
     )
     number = models.PositiveIntegerField()
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["match", "number"],
+                name="unique_set_per_match"
+            )
+        ]
+        
     def __str__(self):
         return f"Set {self.number} - {self.match}"
     
@@ -83,6 +91,7 @@ class Touch(models.Model):
     EXCELLENT = "#"
     POSITIVE = "+"
     NEUTRAL = "!"
+    SPECIAL = "/"
     NEGATIVE = "-"
     ERROR_QUALITY = "="
 
@@ -90,9 +99,21 @@ class Touch(models.Model):
         (EXCELLENT, "#"),
         (POSITIVE, "+"),
         (NEUTRAL, "!"),
+        (SPECIAL, "/"),
         (NEGATIVE, "-"),
         (ERROR_QUALITY, "="),
     ]
+
+    # Valutazioni disponibili per ogni fondamentale
+    QUALITY_BY_FUNDAMENTAL = {
+        SERVE: {EXCELLENT, POSITIVE, NEUTRAL, SPECIAL, NEGATIVE, ERROR_QUALITY},
+        RECEPTION: {EXCELLENT, POSITIVE, NEUTRAL, SPECIAL, NEGATIVE, ERROR_QUALITY},
+        ATTACK: {EXCELLENT, POSITIVE, NEUTRAL, SPECIAL, NEGATIVE, ERROR_QUALITY},
+        BLOCK: {EXCELLENT, ERROR_QUALITY},
+        DEFENSE: {EXCELLENT, POSITIVE, ERROR_QUALITY},
+        SET: {EXCELLENT, ERROR_QUALITY},
+        GENERAL: set(),
+    }
 
     match = models.ForeignKey(
         Match,
@@ -135,32 +156,47 @@ class Touch(models.Model):
         if self.match.mode == Match.BASIC:
             if not self.outcome:
                 raise ValidationError(
-                    "Una Touch BASIC deve avere un outcome."
+                    "Una Touch BASIC deve avere un risultato."
                 )
 
             if self.quality:
                 raise ValidationError(
-                    "Una Touch BASIC non può avere una quality."
+                    "Una Touch BASIC non può avere una valutazione avanzata."
                 )
 
         elif self.match.mode == Match.ADVANCED:
             if not self.quality:
                 raise ValidationError(
-                    "Una Touch ADVANCED deve avere una quality."
+                    "Una Touch ADVANCED deve avere una valutazione."
                 )
 
             if self.outcome:
                 raise ValidationError(
-                    "Una Touch ADVANCED non può avere un outcome."
+                    "Una Touch ADVANCED non può avere un risultato BASIC."
                 )
+
+            allowed_qualities = self.QUALITY_BY_FUNDAMENTAL.get(
+                self.fundamental,
+                set()
+            )
+
+            if self.quality not in allowed_qualities:
+                raise ValidationError({
+                    "quality": (
+                        f"La valutazione '{self.quality}' "
+                        f"non è disponibile per il fondamentale selezionato."
+                    )
+                })
+
         if self.set.match_id != self.match_id:
             raise ValidationError({
                 "set": "Il set selezionato appartiene a un'altra partita."
-            })    
+            })
+
         if self.player.team_id != self.match.team_id:
             raise ValidationError({
                 "player": "Il giocatore selezionato non appartiene alla squadra della partita."
             })
-        
+
     def __str__(self):
-        return f"{self.player} - {self.fundamental}"    
+        return f"{self.player} - {self.fundamental}"
