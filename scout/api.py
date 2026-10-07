@@ -1,10 +1,18 @@
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 from ninja.errors import HttpError
 from ninja import NinjaAPI
-from .models import Team, Player, Match, Set, Touch
-from .schemas import SetSchema, SetCreateSchema, TeamSchema, TeamCreateSchema,  PlayerSchema, PlayerCreateSchema, MatchSchema, MatchCreateSchema, TouchSchema, TouchCreateSchema
-
+from .models import  Team, Player, Match, Set, Lineup, Substitution, Touch
+from .schemas import (
+    SetSchema, SetCreateSchema, 
+    TeamSchema, TeamCreateSchema,  
+    PlayerSchema, PlayerCreateSchema, 
+    MatchSchema, MatchCreateSchema, 
+    LineupSchema, LineupCreateSchema, 
+    SubstitutionSchema, SubstitutionCreateSchema, 
+    TouchSchema, TouchCreateSchema
+)
 api = NinjaAPI()
 
 @api.get("/test")
@@ -71,6 +79,134 @@ def create_set(request, data: SetCreateSchema):
     )
 
     return new_set
+
+@api.post("/sets/{set_id}/initialize", response=SetSchema)
+def initialize_set(request, set_id: int):
+    current_set = get_object_or_404(Set, id=set_id)
+
+    if current_set.is_initialized():
+        raise HttpError(
+            400,
+            "Questo set è già stato inizializzato."
+        )
+
+    try:
+        lineup = current_set.lineup
+    except Lineup.DoesNotExist:
+        raise HttpError(
+            400,
+            "Il set non ha ancora una formazione iniziale."
+        )
+
+    current_set.current_position_1_id = lineup.position_1_id
+    current_set.current_position_2_id = lineup.position_2_id
+    current_set.current_position_3_id = lineup.position_3_id
+    current_set.current_position_4_id = lineup.position_4_id
+    current_set.current_position_5_id = lineup.position_5_id
+    current_set.current_position_6_id = lineup.position_6_id
+
+    current_set.save()
+
+    return current_set
+
+@api.get("/lineups", response=list[LineupSchema])
+def get_lineups(request):
+    return Lineup.objects.all()
+
+@api.post("/lineups", response=LineupSchema)
+def create_lineup(request, data: LineupCreateSchema):
+    lineup = Lineup(
+        set_id=data.set_id,
+        position_1_id=data.position_1,
+        position_2_id=data.position_2,
+        position_3_id=data.position_3,
+        position_4_id=data.position_4,
+        position_5_id=data.position_5,
+        position_6_id=data.position_6,
+    )
+
+    try:
+        lineup.full_clean()
+        lineup.save()
+    except ValidationError as e:
+        messages = []
+
+        for errors in e.message_dict.values():
+            messages.extend(errors)
+
+        raise HttpError(400, " ".join(messages))
+
+    except IntegrityError:
+        raise HttpError(
+            400,
+            "Questo set ha già una formazione iniziale."
+        )
+
+    return lineup
+
+@api.get("/substitutions", response=list[SubstitutionSchema])
+def get_substitutions(request):
+    return Substitution.objects.all()
+
+@api.post("/substitutions", response=SubstitutionSchema)
+def create_substitution(request, data: SubstitutionCreateSchema):
+    current_set = get_object_or_404(Set, id=data.set_id)
+
+    if not current_set.is_initialized():
+        raise HttpError(
+            400,
+            "Il set non è ancora stato inizializzato."
+        )
+
+    if data.position < 1 or data.position > 6:
+        raise HttpError(
+            400,
+            "La posizione deve essere compresa tra 1 e 6."
+        )
+
+    current_player_id = getattr(
+        current_set,
+        f"current_position_{data.position}_id"
+    )
+
+    if current_player_id != data.player_out:
+        raise HttpError(
+            400,
+            "Il giocatore indicato come uscente non occupa la posizione selezionata."
+        )
+
+    current_players = [
+    current_set.current_position_1_id,
+    current_set.current_position_2_id,
+    current_set.current_position_3_id,
+    current_set.current_position_4_id,
+    current_set.current_position_5_id,
+    current_set.current_position_6_id,
+]
+
+    if data.player_in in current_players:
+        raise HttpError(
+            400,
+            "Il giocatore entrante è già presente in campo."
+        )
+
+    substitution = Substitution(
+        set_id=data.set_id,
+        player_out_id=data.player_out,
+        player_in_id=data.player_in,
+        position=data.position,
+    )
+
+    setattr(
+        current_set,
+        f"current_position_{data.position}_id",
+        data.player_in
+    )
+
+    substitution.save()
+    current_set.save()
+
+    return substitution
 
 @api.get("/touches", response=list[TouchSchema])
 def get_touches(request):

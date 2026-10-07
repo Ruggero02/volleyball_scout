@@ -1,0 +1,1976 @@
+# CONTEXTO COMPLETO — VOLLEYBALL SCOUT
+
+## 1. OBIETTIVO DEL PROGETTO
+
+Sto sviluppando da zero una web app chiamata **Volleyball Scout**, pensata per fare scouting di partite di pallavolo direttamente dallo smartphone durante una partita.
+
+L'app dovrà essere:
+
+* mobile-first;
+* utilizzabile da smartphone durante una partita;
+* successivamente utilizzabile anche da tablet;
+* una PWA;
+* utilizzabile offline;
+* capace di salvare temporaneamente gli eventi sul dispositivo;
+* sincronizzabile con il backend quando torna disponibile la connessione;
+* ospitata inizialmente su un mio computer/server di casa;
+* successivamente accessibile anche da remoto dalla palestra.
+
+Il progetto deve essere sviluppato **passo passo**, perché sono un junior e voglio imparare cosa sto facendo.
+
+NON voglio che vengano fatte modifiche enormi tutte insieme senza spiegazione.
+
+Ogni volta che sviluppiamo una nuova parte:
+
+1. spiegami cosa stiamo facendo;
+2. spiegami perché lo facciamo;
+3. indicami esattamente quale file modificare;
+4. fammi fare una modifica alla volta;
+5. fammi eseguire il comando/test;
+6. controlliamo insieme il risultato;
+7. solo dopo passiamo allo step successivo.
+
+Preferisco capire il rapporto:
+
+**Model → Schema → API → JSON → Frontend**
+
+e capire il motivo delle decisioni architetturali.
+
+Le spiegazioni devono essere in italiano.
+
+Gli errori mostrati all'utente finale dell'app devono essere in italiano.
+
+---
+
+# 2. STACK TECNOLOGICO PREVISTO
+
+## Backend
+
+* Python
+* Django 5
+* Django Ninja
+* Pydantic tramite Django Ninja
+* SQLite inizialmente
+* PostgreSQL eventualmente in futuro
+
+## Frontend
+
+* HTML
+* JavaScript
+* Tailwind CSS
+* PWA
+* mobile-first
+
+## Offline
+
+Prevediamo:
+
+* IndexedDB per gli eventi di scouting;
+* una coda locale;
+* sincronizzazione con API quando la connessione torna disponibile.
+
+Endpoint previsto in futuro:
+
+`POST /api/touches/sync`
+
+## Server
+
+Durante lo sviluppo:
+
+* PC Windows
+
+In futuro:
+
+* laptop/server Ubuntu sempre acceso
+
+Accesso remoto previsto in futuro tramite:
+
+* Tailscale
+  oppure
+* Cloudflare Tunnel
+
+Docker/Systemd potranno essere introdotti successivamente.
+
+NON è ancora il momento di implementare questa parte.
+
+---
+
+# 3. FUNZIONAMENTO DELLO SCOUTING
+
+Ci sono due modalità.
+
+## BASIC
+
+Pensata soprattutto per U15 e scouting rapido.
+
+Per ogni azione:
+
+* Punto
+* Errore
+* Ok
+
+Quindi:
+
+`POINT`
+`ERROR`
+`OK`
+
+## ADVANCED
+
+Pensata per scouting più dettagliato, ad esempio Serie C.
+
+Si usano valutazioni:
+
+`#`
+`+`
+`!`
+`/`
+`-`
+`=`
+
+IMPORTANTE:
+
+I simboli rappresentano **l'efficacia dell'azione nel gioco**, non semplicemente la correttezza tecnica del gesto.
+
+Non tutti i fondamentali devono necessariamente avere tutti e sei i simboli.
+
+---
+
+# 4. FONDAMENTALI
+
+I fondamentali definiti sono:
+
+```text
+SERVE
+RECEPTION
+SET
+ATTACK
+BLOCK
+DEFENSE
+GENERAL
+```
+
+In italiano:
+
+```text
+SERVE      = Servizio
+RECEPTION  = Ricezione
+SET        = Alzata
+ATTACK     = Attacco
+BLOCK      = Muro
+DEFENSE    = Difesa
+GENERAL    = Generale
+```
+
+`GENERAL` è stato aggiunto appositamente.
+
+Serve per registrare un punto/errore generale di un giocatore senza dover per forza classificare l'azione in un fondamentale.
+
+Esempio:
+
+un giocatore commette un errore durante un'azione di bagher ma non voglio necessariamente classificare quell'evento come "ricezione" o "difesa".
+
+---
+
+# 5. VALUTAZIONI ADVANCED
+
+Valori disponibili:
+
+```text
+# = EXCELLENT
++ = POSITIVE
+! = NEUTRAL
+/ = SPECIAL
+- = NEGATIVE
+= = ERROR_QUALITY
+```
+
+Disponibilità attuale per fondamentale:
+
+## SERVE
+
+```text
+# + ! / - =
+```
+
+Significati definiti:
+
+```text
+#  Ace
+
++  Buon servizio, l'avversario può fare solo un attacco prevedibile
+
+!  Ricezione leggermente spostata, vengono forzate palle veloci/primo tempo
+
+/  Servizio positivo, il ricevitore manda immediatamente la palla nel campo avversario
+
+-  Ricezione positiva, l'avversario può utilizzare tutte le combinazioni di attacco
+
+=  Errore al servizio
+```
+
+## RECEPTION
+
+```text
+# + ! / - =
+```
+
+Significati definiti:
+
+```text
+#  Ricezione perfetta al palleggiatore, tutte le combinazioni disponibili
+
++  Buona ricezione, tutte le combinazioni disponibili
+
+!  Ricezione leggermente spostata, vengono forzate palle veloci
+
+/  Ricezione negativa che termina nel campo avversario
+
+-  Ricezione lontana dal palleggiatore, solo attacco prevedibile
+
+=  Errore di ricezione, punto/ace avversario
+```
+
+## ATTACK
+
+```text
+# + ! / - =
+```
+
+Significati definiti:
+
+```text
+#  Punto
+
++  Costringe l'avversario a giocare una free-ball
+
+!  Murato ma il pallone può essere rigiocato dalla propria squadra
+
+/  Murato da muro vincente, punto al muro/avversario
+
+-  Attacco debole, l'avversario può contrattaccare
+
+=  Errore di attacco, punto avversario
+```
+
+## BLOCK
+
+Per ora:
+
+```text
+# =
+```
+
+Significati definiti:
+
+```text
+#  Punto a muro
+
+=  Errore di muro, fallo oppure mani-out
+```
+
+I significati di `+`, `!`, `/`, `-` NON sono ancora stati definiti.
+
+NON inventarli.
+
+## DEFENSE
+
+Per ora:
+
+```text
+# + =
+```
+
+Significati definiti:
+
+```text
+#  Difesa tenuta/rigiocata che permette una rigiocata efficace
+
++  Difesa tenuta/rigiocata ma permette solamente una palla facile per il contrattacco
+
+=  Errore difensivo, competenza non rispettata / posizione sbagliata
+```
+
+Gli altri significati non sono ancora definiti.
+
+NON inventarli.
+
+## SET
+
+Per ora:
+
+```text
+# =
+```
+
+Significati definiti:
+
+```text
+#  Alzata perfetta
+
+=  Errore di alzata
+```
+
+Gli altri significati non sono ancora definiti.
+
+## GENERAL
+
+Non ha valutazioni Advanced.
+
+```text
+GENERAL = set()
+```
+
+---
+
+# 6. REGOLE DI PUNTEGGIO
+
+La partita usa il sistema rally point.
+
+IMPORTANTE:
+
+Una `Touch` non significa necessariamente che il punteggio cambi.
+
+In BASIC:
+
+```text
+POINT = il nostro team vince il rally
+ERROR = il nostro team perde il rally
+OK    = il rally continua
+```
+
+Il punteggio cambia solamente quando viene determinata la fine del rally.
+
+La rotazione deve essere gestita in base alla conclusione del rally.
+
+Regola generale:
+
+* se riceviamo e vinciamo il rally → ruotiamo e serviamo;
+* se serviamo e vinciamo → non ruotiamo;
+* se perdiamo → non ruotiamo noi.
+
+La logica completa di punteggio/rotazione verrà implementata più avanti.
+
+NON bisogna ancora inventare come tutti i simboli Advanced chiudono un rally, perché alcuni significati non sono ancora definiti.
+
+---
+
+# 7. FORMAZIONE E ROTAZIONE
+
+La squadra ha una formazione iniziale di 6 giocatori.
+
+Le posizioni sono:
+
+```text
+P1
+P2
+P3
+P4
+P5
+P6
+```
+
+La `Lineup` rappresenta la formazione iniziale.
+
+Il `Set` invece conserva la situazione corrente in campo.
+
+Questa distinzione è importante.
+
+## Lineup
+
+È la formazione iniziale del set.
+
+Una volta creata, non viene usata per rappresentare le sostituzioni successive.
+
+## Set current positions
+
+Nel modello `Set` abbiamo:
+
+```text
+current_position_1
+current_position_2
+current_position_3
+current_position_4
+current_position_5
+current_position_6
+```
+
+Questi rappresentano chi è **attualmente in campo**.
+
+Quindi:
+
+```text
+Lineup = formazione iniziale
+Set.current_position_* = situazione attuale
+```
+
+---
+
+# 8. SOSTITUZIONI
+
+È stato deciso che per ora NON implementiamo tutte le regole regolamentari delle sostituzioni.
+
+Vogliamo prima far funzionare correttamente il meccanismo tecnico.
+
+Una sostituzione contiene:
+
+```text
+set
+player_out
+player_in
+position
+```
+
+Esempio:
+
+```text
+Player 1 esce dalla P1
+Player 9 entra nella P1
+```
+
+Il backend deve:
+
+1. controllare che il set sia inizializzato;
+2. controllare che la posizione sia tra 1 e 6;
+3. controllare che `player_out` sia effettivamente nella posizione indicata;
+4. controllare che `player_in` non sia già in campo;
+5. creare la sostituzione;
+6. aggiornare la posizione corrente del Set.
+
+La UI in futuro potrà rendere molto più rapida questa operazione.
+
+Anche il libero potrà essere gestito successivamente come sostituzione normale dal database, mentre la UI potrà renderla più comoda.
+
+---
+
+# 9. UNDO
+
+In futuro dovrà esserci:
+
+```text
+↩ Annulla ultima azione
+```
+
+che è diverso da:
+
+```text
+← Indietro
+```
+
+`Indietro` = navigazione.
+
+`Annulla ultima azione` = annullamento dell'ultima azione di gioco.
+
+L'Undo dovrà poter ripristinare, quando necessario:
+
+* punteggio;
+* rotazione;
+* formazione corrente;
+* sostituzione;
+* eventuali eventi collegati.
+
+NON è ancora implementato.
+
+---
+
+# 10. MODELLI DJANGO ATTUALI
+
+Il progetto Django contiene:
+
+```text
+Team
+Player
+Match
+Set
+Lineup
+Substitution
+Touch
+```
+
+---
+
+# 11. MODEL TEAM
+
+```python
+class Team(models.Model):
+    name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.name
+```
+
+Rappresenta una squadra.
+
+---
+
+# 12. MODEL PLAYER
+
+```python
+class Player(models.Model):
+    name = models.CharField(max_length=100)
+    number = models.PositiveIntegerField()
+    team = models.ForeignKey(
+        Team,
+        related_name='players',
+        on_delete=models.CASCADE
+    )
+
+    def __str__(self):
+        return f"#{self.number} {self.name}"
+```
+
+Ogni giocatore appartiene a una squadra.
+
+---
+
+# 13. MODEL MATCH
+
+```python
+class Match(models.Model):
+    BASIC = "BASIC"
+    ADVANCED = "ADVANCED"
+
+    MODE_CHOICES = [
+        (BASIC, "Basic"),
+        (ADVANCED, "Advanced"),
+    ]
+
+    team = models.ForeignKey(
+        Team,
+        related_name='matches',
+        on_delete=models.CASCADE
+    )
+    opponent = models.CharField(max_length=100)
+    date = models.DateField()
+    mode = models.CharField(
+        max_length=20,
+        choices=MODE_CHOICES
+    )
+
+    def __str__(self):
+        return f"{self.team} vs {self.opponent} - {self.date}"
+```
+
+Una partita contiene:
+
+* squadra;
+* avversario;
+* data;
+* modalità BASIC/ADVANCED.
+
+La data può essere anche passata perché vogliamo poter inserire partite già disputate.
+
+---
+
+# 14. MODEL SET
+
+Il modello `Set` contiene:
+
+```text
+match
+number
+our_score
+opponent_score
+serving_team
+current_position_1
+current_position_2
+current_position_3
+current_position_4
+current_position_5
+current_position_6
+```
+
+`serving_team`:
+
+```text
+OUR = Noi
+OPPONENT = Avversari
+```
+
+I current positions sono ForeignKey verso Player.
+
+Sono:
+
+```python
+null=True
+blank=True
+```
+
+perché un set può essere creato prima di essere inizializzato.
+
+Esiste:
+
+```python
+def is_initialized(self):
+    return all([
+        self.current_position_1_id,
+        self.current_position_2_id,
+        self.current_position_3_id,
+        self.current_position_4_id,
+        self.current_position_5_id,
+        self.current_position_6_id,
+    ])
+```
+
+Il set ha anche il vincolo:
+
+```text
+un solo numero di set per ogni partita
+```
+
+tramite:
+
+```python
+UniqueConstraint(
+    fields=["match", "number"],
+    name="unique_set_per_match"
+)
+```
+
+---
+
+# 15. MODEL LINEUP
+
+`Lineup` è collegato a `Set` con:
+
+```python
+OneToOneField
+```
+
+quindi esiste una sola formazione iniziale per ogni set.
+
+Contiene:
+
+```text
+position_1
+position_2
+position_3
+position_4
+position_5
+position_6
+```
+
+Ogni posizione è un Player.
+
+Il metodo `clean()` controlla:
+
+### 1. Nessun giocatore duplicato
+
+I sei giocatori devono essere diversi.
+
+### 2. Tutti appartengono alla squadra della partita
+
+La squadra del giocatore deve essere:
+
+```text
+self.set.match.team
+```
+
+Se una formazione non rispetta questi criteri, viene generato un `ValidationError`.
+
+IMPORTANTE:
+
+Django non esegue automaticamente sempre `full_clean()` prima di `save()`.
+
+Per questo nell'API facciamo esplicitamente:
+
+```python
+lineup.full_clean()
+```
+
+prima di salvare.
+
+---
+
+# 16. MODEL SUBSTITUTION
+
+```text
+set
+player_out
+player_in
+position
+```
+
+Rappresenta una sostituzione.
+
+Non contiene ancora tutte le regole regolamentari.
+
+---
+
+# 17. MODEL TOUCH
+
+La `Touch` rappresenta un'azione di scouting.
+
+Contiene:
+
+```text
+match
+set
+player
+fundamental
+outcome
+quality
+```
+
+`fundamental`:
+
+```text
+SERVE
+RECEPTION
+SET
+ATTACK
+BLOCK
+DEFENSE
+GENERAL
+```
+
+`outcome`:
+
+```text
+POINT
+OK
+ERROR
+```
+
+`quality`:
+
+```text
+#
++
+!
+/
+-
+=
+```
+
+---
+
+# 18. VALIDAZIONE TOUCH
+
+La Touch viene validata in base alla modalità della partita.
+
+## BASIC
+
+Deve avere:
+
+```text
+outcome
+```
+
+Non può avere:
+
+```text
+quality
+```
+
+Errore:
+
+```text
+Una Touch BASIC deve avere un risultato.
+```
+
+oppure:
+
+```text
+Una Touch BASIC non può avere una valutazione avanzata.
+```
+
+## ADVANCED
+
+Deve avere:
+
+```text
+quality
+```
+
+Non può avere:
+
+```text
+outcome
+```
+
+Inoltre la qualità deve essere tra quelle consentite per il fondamentale.
+
+Esempio:
+
+```text
+BLOCK → # oppure =
+```
+
+Se viene inserito un simbolo non consentito:
+
+```text
+La valutazione '...' non è disponibile per il fondamentale selezionato.
+```
+
+Vengono inoltre controllati:
+
+### Set corretto
+
+Il set deve appartenere alla partita indicata.
+
+### Player corretto
+
+Il giocatore deve appartenere alla squadra della partita.
+
+---
+
+# 19. SCHEMA DJANGO NINJA
+
+File:
+
+```text
+scout/schemas.py
+```
+
+Gli schema principali sono:
+
+```text
+TeamSchema
+TeamCreateSchema
+
+PlayerSchema
+PlayerCreateSchema
+
+MatchSchema
+MatchCreateSchema
+
+SetSchema
+SetCreateSchema
+
+TouchSchema
+TouchCreateSchema
+
+LineupSchema
+LineupCreateSchema
+
+SubstitutionSchema
+SubstitutionCreateSchema
+```
+
+IMPORTANTE:
+
+Gli schema di risposta per ForeignKey usano gli ID.
+
+Per esempio:
+
+```python
+class LineupSchema(Schema):
+    id: int
+    set_id: int
+    position_1_id: int
+    position_2_id: int
+    position_3_id: int
+    position_4_id: int
+    position_5_id: int
+    position_6_id: int
+```
+
+Questo perché Django restituisce un oggetto Player per:
+
+```text
+position_1
+```
+
+mentre lo schema precedente si aspettava un `int`.
+
+Abbiamo corretto il problema usando:
+
+```text
+position_1_id
+...
+position_6_id
+```
+
+Stessa logica per:
+
+```text
+player_id
+set_id
+match_id
+```
+
+---
+
+# 20. API DJANGO NINJA
+
+File:
+
+```text
+scout/api.py
+```
+
+API attualmente presenti:
+
+```text
+GET  /api/test
+
+GET  /api/teams
+POST /api/teams
+
+GET  /api/players
+GET  /api/players/{player_id}
+POST /api/players
+
+GET  /api/matches
+GET  /api/matches/{match_id}
+POST /api/matches
+
+GET  /api/sets
+GET  /api/sets/{set_id}
+POST /api/sets
+
+POST /api/sets/{set_id}/initialize
+
+GET  /api/lineups
+POST /api/lineups
+
+GET  /api/substitutions
+POST /api/substitutions
+
+GET  /api/touches
+POST /api/touches
+```
+
+Swagger/OpenAPI è disponibile tramite Django Ninja sotto:
+
+```text
+/api/docs
+```
+
+---
+
+# 21. INIZIALIZZAZIONE DEL SET
+
+Endpoint:
+
+```text
+POST /api/sets/{set_id}/initialize
+```
+
+Funzionamento:
+
+1. recupera il Set;
+2. controlla se è già inizializzato;
+3. controlla che esista una Lineup;
+4. copia la Lineup nei `current_position_*`;
+5. salva il Set.
+
+Se è già inizializzato:
+
+```text
+Questo set è già stato inizializzato.
+```
+
+Se non esiste una formazione:
+
+```text
+Il set non ha ancora una formazione iniziale.
+```
+
+Questa parte è già stata testata.
+
+La prima chiamata ha inizializzato correttamente il set.
+
+La seconda chiamata ha restituito correttamente:
+
+```text
+400
+Questo set è già stato inizializzato.
+```
+
+---
+
+# 22. API LINEUP
+
+Creazione:
+
+```text
+POST /api/lineups
+```
+
+Il backend:
+
+1. costruisce la Lineup;
+2. esegue `full_clean()`;
+3. se ci sono errori restituisce 400;
+4. salva;
+5. restituisce la Lineup.
+
+Se due giocatori occupano la stessa posizione:
+
+```text
+Un giocatore non può occupare più di una posizione.
+```
+
+Se i giocatori appartengono a un'altra squadra:
+
+```text
+Tutti i giocatori della formazione devono appartenere alla squadra della partita.
+```
+
+Se esiste già una formazione per quel set:
+
+```text
+Questo set ha già una formazione iniziale.
+```
+
+Questa parte è già stata testata.
+
+---
+
+# 23. API SUBSTITUTION
+
+Endpoint:
+
+```text
+POST /api/substitutions
+```
+
+Schema:
+
+```json
+{
+    "set_id": 1,
+    "player_out": 1,
+    "player_in": 9,
+    "position": 1
+}
+```
+
+Controlli attuali:
+
+### Set inizializzato
+
+Se non è inizializzato:
+
+```text
+Il set non è ancora stato inizializzato.
+```
+
+### Posizione
+
+Deve essere:
+
+```text
+1 <= position <= 6
+```
+
+Altrimenti:
+
+```text
+La posizione deve essere compresa tra 1 e 6.
+```
+
+### Player uscente
+
+Deve essere effettivamente nella posizione indicata.
+
+Altrimenti:
+
+```text
+Il giocatore indicato come uscente non occupa la posizione selezionata.
+```
+
+### Player entrante
+
+NON deve essere già in campo.
+
+Questo controllo è stato appena aggiunto:
+
+```python
+current_players = [
+    current_set.current_position_1_id,
+    current_set.current_position_2_id,
+    current_set.current_position_3_id,
+    current_set.current_position_4_id,
+    current_set.current_position_5_id,
+    current_set.current_position_6_id,
+]
+
+if data.player_in in current_players:
+    raise HttpError(
+        400,
+        "Il giocatore entrante è già presente in campo."
+    )
+```
+
+Questo controllo è stato aggiunto perché durante un test era possibile creare una situazione impossibile con lo stesso giocatore in due posizioni.
+
+IMPORTANTE:
+
+Il controllo è stato appena inserito.
+
+Prima di continuare bisogna verificare:
+
+```text
+python manage.py check
+```
+
+e poi fare i test API.
+
+---
+
+# 24. PROBLEMA DI DUPLICAZIONE SCOPERTO DURANTE IL TEST
+
+Durante un test avevamo:
+
+```text
+P1 = player 1
+P2 = player 2
+P3 = player 4
+P4 = player 6
+P5 = player 7
+P6 = player 8
+```
+
+È stata provata erroneamente questa sostituzione:
+
+```text
+player_out = 1
+player_in = 6
+position = 1
+```
+
+Ma Player 6 era già in P4.
+
+Il backend precedente non controllava questa situazione.
+
+Risultato errato:
+
+```text
+P1 = player 6
+P2 = player 2
+P3 = player 4
+P4 = player 6
+P5 = player 7
+P6 = player 8
+```
+
+Quindi Player 6 era contemporaneamente in:
+
+```text
+P1
+P4
+```
+
+Abbiamo capito che il backend deve essere la fonte di verità e deve impedire questo stato.
+
+Il Set 1 è stato quindi ripristinato manualmente tramite Django Admin.
+
+Stato corretto attuale:
+
+```text
+P1 = player 1
+P2 = player 2
+P3 = player 4
+P4 = player 6
+P5 = player 7
+P6 = player 8
+```
+
+---
+
+# 25. PLAYER DI RISERVA
+
+È stato creato Player:
+
+```text
+ID = 9
+```
+
+che appartiene alla stessa squadra della partita.
+
+Serve per testare una sostituzione valida.
+
+Il prossimo test valido sarà:
+
+```json
+{
+    "set_id": 1,
+    "player_out": 1,
+    "player_in": 9,
+    "position": 1
+}
+```
+
+Risultato atteso:
+
+```text
+P1 = player 9
+P2 = player 2
+P3 = player 4
+P4 = player 6
+P5 = player 7
+P6 = player 8
+```
+
+---
+
+# 26. DATI ATTUALI DI TEST
+
+Team:
+
+```text
+team 1 = squadra principale
+team 2 = altra squadra
+```
+
+Players principali:
+
+```text
+ID 1 = Ruggero Calligaris, numero 8, team 1
+ID 2 = Giovanni Vinoni, numero 7, team 1
+ID 4 = test, numero 4, team 1
+ID 5 = test, numero 1, team 2
+ID 6 = Luca, numero 3, team 1
+ID 7 = Franco, numero 2, team 1
+ID 8 = Antonio, numero 12, team 1
+ID 9 = giocatore di riserva, team 1
+```
+
+Set:
+
+```text
+Set 1 → match 1
+Set 2 → match 2
+```
+
+Lineup Set 1:
+
+```text
+P1 → player 1
+P2 → player 2
+P3 → player 4
+P4 → player 6
+P5 → player 7
+P6 → player 8
+```
+
+Current positions Set 1, dopo il ripristino:
+
+```text
+P1 → player 1
+P2 → player 2
+P3 → player 4
+P4 → player 6
+P5 → player 7
+P6 → player 8
+```
+
+Esiste anche una vecchia `Substitution` di test, probabilmente:
+
+```text
+ID 1
+player 1 → player 6
+position 1
+```
+
+È un record di test creato prima del controllo sui duplicati.
+
+NON è ancora stato deciso se eliminarlo.
+
+---
+
+# 27. DJANGO ADMIN
+
+File:
+
+```text
+scout/admin.py
+```
+
+Attualmente sono registrati:
+
+```text
+Team
+Player
+Match
+Set
+Lineup
+Substitution
+Touch
+```
+
+Il Django Admin funziona correttamente.
+
+URL:
+
+```text
+/admin/
+```
+
+---
+
+# 28. URL DJANGO
+
+File:
+
+```text
+config/urls.py
+```
+
+Contenuto logico:
+
+```python
+from django.contrib import admin
+from django.urls import path
+from scout.api import api
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("api/", api.urls),
+]
+```
+
+Quindi:
+
+```text
+/admin/
+```
+
+per Django Admin.
+
+```text
+/api/
+```
+
+per Django Ninja.
+
+---
+
+# 29. AMBIENTE DI SVILUPPO
+
+Sistema principale:
+
+```text
+Windows
+```
+
+Python:
+
+```text
+Python 3.13.7
+```
+
+Git:
+
+```text
+Git 2.51.0.windows.1
+```
+
+Django:
+
+```text
+Django 5.2.17
+```
+
+Django Ninja:
+
+```text
+django-ninja 1.7.1
+```
+
+VS Code:
+
+```text
+1.127.0
+```
+
+Cartella progetto:
+
+```text
+C:\Users\pesce\Desktop\volleyball-scout
+```
+
+Virtual environment:
+
+```text
+.venv
+```
+
+È già stato creato e utilizzato.
+
+---
+
+# 30. STRUTTURA ATTUALE DEL PROGETTO
+
+La struttura importante è:
+
+```text
+volleyball-scout/
+│
+├── .venv/
+│
+├── config/
+│   ├── __init__.py
+│   ├── settings.py
+│   ├── urls.py
+│   ├── asgi.py
+│   └── wsgi.py
+│
+├── scout/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── api.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── views.py
+│   ├── tests.py
+│   │
+│   └── migrations/
+│       ├── ...
+│
+├── manage.py
+├── db.sqlite3
+└── .gitignore
+```
+
+---
+
+# 31. MIGRAZIONI
+
+Sono state affrontate anche alcune problematiche iniziali con le migrazioni.
+
+A un certo punto c'erano problemi dovuti a modifiche iniziali del modello e a una migrazione non corretta.
+
+È stato necessario:
+
+* pulire le vecchie migration locali;
+* eliminare il database locale;
+* rigenerare le migration;
+* rieseguire `migrate`.
+
+La situazione è stata poi sistemata.
+
+Le migration principali create nel tempo hanno introdotto:
+
+```text
+Team
+Player
+Match
+Set
+Touch
+Lineup
+Substitution
+current_position_* del Set
+```
+
+Il database attuale funziona correttamente.
+
+NON cancellare nuovamente migration o database senza prima capire perché serve.
+
+---
+
+# 32. VALIDAZIONE GENERALE
+
+Il comando:
+
+```bash
+python manage.py check
+```
+
+è stato usato più volte e ha restituito correttamente:
+
+```text
+0
+```
+
+Questo significa che Django non rileva problemi strutturali.
+
+ATTENZIONE:
+
+È stato appena aggiunto il controllo:
+
+```text
+Il giocatore entrante è già presente in campo.
+```
+
+Quindi il prossimo passo, quando riprenderemo, è prima verificare nuovamente:
+
+```bash
+python manage.py check
+```
+
+---
+
+# 33. GIT / GITHUB
+
+Repository GitHub:
+
+```text
+https://github.com/Ruggero02/volleyball_scout.git
+```
+
+Branch:
+
+```text
+main
+```
+
+Il branch locale segue:
+
+```text
+origin/main
+```
+
+È già stato fatto un commit iniziale:
+
+```text
+aece45d
+```
+
+Messaggio:
+
+```text
+Setup iniziale e prime api
+```
+
+È già stato fatto il push iniziale su GitHub.
+
+IMPORTANTE:
+
+Dopo le modifiche successive non bisogna assumere automaticamente che tutto sia già stato committato.
+
+Quando sarà il momento, controllare:
+
+```bash
+git status
+```
+
+prima di fare commit.
+
+---
+
+# 34. PRINCIPIO ARCHITETTURALE IMPORTANTE
+
+Il backend deve essere la **fonte di verità**.
+
+Il frontend non deve semplicemente "decidere" lo stato della partita.
+
+Il frontend:
+
+```text
+mostra lo stato
+↓
+l'utente compie un'azione
+↓
+manda una richiesta API
+↓
+backend valida
+↓
+backend aggiorna il database
+↓
+backend restituisce il nuovo stato
+↓
+frontend aggiorna la schermata
+```
+
+Questo sarà particolarmente importante per:
+
+* sostituzioni;
+* rotazioni;
+* punteggio;
+* Undo;
+* sincronizzazione offline.
+
+---
+
+# 35. COSA È GIÀ STATO TESTATO
+
+## API test
+
+Funziona:
+
+```text
+GET /api/test
+```
+
+## Team
+
+Creazione e lettura testate.
+
+## Player
+
+Creazione e lettura testate.
+
+## Match
+
+Creazione e lettura testate.
+
+## Set
+
+Creazione e lettura testate.
+
+## Lineup
+
+Creazione testata.
+
+È stato verificato che:
+
+* sei giocatori diversi funzionano;
+* giocatori duplicati vengono rifiutati;
+* giocatori di un'altra squadra vengono rifiutati;
+* seconda Lineup sullo stesso Set viene rifiutata.
+
+## Initialize Set
+
+Testato correttamente.
+
+Prima chiamata:
+
+```text
+200
+```
+
+Seconda chiamata:
+
+```text
+400
+Questo set è già stato inizializzato.
+```
+
+## Current positions
+
+Verificate tramite:
+
+```text
+GET /api/sets/1
+```
+
+e correttamente restituite.
+
+## Substitution
+
+La logica base è stata implementata.
+
+È stato scoperto e corretto il problema del giocatore entrante già presente in campo.
+
+Il nuovo controllo NON è ancora stato testato dopo l'ultima modifica.
+
+---
+
+# 36. PROSSIMO PASSO ESATTO
+
+Quando riprenderemo, NON saltare avanti.
+
+Ripartire da qui.
+
+### STEP 1
+
+Eseguire:
+
+```bash
+python manage.py check
+```
+
+e verificare che sia ancora:
+
+```text
+0
+```
+
+### STEP 2
+
+Testare una sostituzione NON valida:
+
+```json
+{
+    "set_id": 1,
+    "player_out": 1,
+    "player_in": 6,
+    "position": 1
+}
+```
+
+Perché Player 6 è già in P4.
+
+Deve rispondere:
+
+```text
+400
+Il giocatore entrante è già presente in campo.
+```
+
+E soprattutto il Set NON deve cambiare.
+
+### STEP 3
+
+Controllare:
+
+```text
+GET /api/sets/1
+```
+
+e verificare che sia ancora:
+
+```text
+P1 = 1
+P2 = 2
+P3 = 4
+P4 = 6
+P5 = 7
+P6 = 8
+```
+
+### STEP 4
+
+Testare una sostituzione valida:
+
+```json
+{
+    "set_id": 1,
+    "player_out": 1,
+    "player_in": 9,
+    "position": 1
+}
+```
+
+Risultato atteso:
+
+```text
+P1 = 9
+P2 = 2
+P3 = 4
+P4 = 6
+P5 = 7
+P6 = 8
+```
+
+### STEP 5
+
+Controllare:
+
+```text
+GET /api/sets/1
+```
+
+### STEP 6
+
+Solo dopo questi test bisogna migliorare la logica.
+
+In particolare, più avanti sarà opportuno utilizzare:
+
+```python
+transaction.atomic()
+```
+
+per fare in modo che:
+
+```text
+salvataggio Substitution
++
+aggiornamento Set
+```
+
+siano un'unica operazione atomica.
+
+NON farlo ancora prima di aver verificato la logica base.
+
+---
+
+# 37. COSA NON È ANCORA STATO FATTO
+
+Molto importante: il progetto è ancora principalmente backend.
+
+Non abbiamo ancora costruito:
+
+## Frontend
+
+* schermata partita;
+* schermata scouting;
+* pulsanti Punto/Errore/Ok;
+* selezione giocatore;
+* selezione fondamentale;
+* selezione valutazione;
+* campo/rotazioni;
+* sostituzioni visuali;
+* scoreboard.
+
+## PWA
+
+* manifest;
+* service worker;
+* installazione;
+* caching.
+
+## Offline
+
+* IndexedDB;
+* coda eventi;
+* sincronizzazione;
+* gestione conflitti.
+
+## Statistiche
+
+* statistiche per giocatore;
+* statistiche per fondamentale;
+* percentuali;
+* report.
+
+## PDF
+
+Non ancora implementato.
+
+## Autenticazione
+
+Non ancora implementata.
+
+## Server remoto
+
+Non ancora implementato.
+
+## Docker
+
+Non ancora implementato.
+
+## PostgreSQL
+
+Non ancora implementato.
+
+## Tailscale / Cloudflare Tunnel
+
+Non ancora implementato.
+
+---
+
+# 38. ORDINE DI SVILUPPO CONSIGLIATO
+
+Il progetto deve continuare gradualmente.
+
+L'ordine logico previsto è:
+
+```text
+1. Completare e stabilizzare backend
+        ↓
+2. Testare bene Match / Set / Lineup / Substitution
+        ↓
+3. Completare Touch API
+        ↓
+4. Gestire punteggio e rotazione
+        ↓
+5. Implementare Undo
+        ↓
+6. Costruire frontend minimo
+        ↓
+7. Collegare frontend alle API
+        ↓
+8. Costruire UI scouting BASIC
+        ↓
+9. Costruire UI ADVANCED
+        ↓
+10. Gestire formazione/rotazione/sostituzioni nella UI
+        ↓
+11. IndexedDB/offline
+        ↓
+12. Sincronizzazione
+        ↓
+13. Statistiche
+        ↓
+14. PWA
+        ↓
+15. Test su smartphone
+        ↓
+16. Deploy sul server Ubuntu
+        ↓
+17. Accesso remoto
+```
+
+Non anticipare inutilmente gli step successivi.
+
+---
+
+# 39. REGOLE IMPORTANTI PER CHI CONTINUA IL PROGETTO
+
+Sono il proprietario del progetto e sono un junior.
+
+Quando mi aiuti:
+
+* non dare per scontato che sappia Django;
+* non dare per scontato che sappia Django Ninja;
+* non dare per scontato che sappia REST;
+* non dare per scontato che sappia database;
+* spiegami i concetti quando diventano rilevanti;
+* evita modifiche "magiche";
+* non generare automaticamente tutto il progetto;
+* non saltare direttamente al frontend se il backend non è stabile;
+* fammi testare ogni pezzo.
+
+Se devi modificare un file:
+
+1. dimmi il percorso;
+2. spiegami cosa cambiamo;
+3. mostrami il codice da inserire/sostituire;
+4. fammi eseguire il test;
+5. aspetta il mio risultato.
+
+Preferisco procedere con:
+
+```text
+MODIFICA
+↓
+TEST
+↓
+RISULTATO
+↓
+SPIEGAZIONE
+↓
+PROSSIMO STEP
+```
+
+piuttosto che ricevere 20 modifiche contemporaneamente.
+
+---
+
+# 40. STATO ATTUALE IN UNA FRASE
+
+Il progetto **Volleyball Scout** ha già un backend Django + Django Ninja funzionante con Team, Player, Match, Set, Lineup, Substitution e Touch, con validazioni e API di base già testate; il lavoro è attualmente concentrato sulla gestione corretta dello stato corrente del Set e delle sostituzioni, e il prossimo test da fare è verificare il nuovo controllo che impedisce di inserire in campo un giocatore già presente.
+
+---
+
+# 41. ISTRUZIONE PER RIPRENDERE IL PROGETTO
+
+Se questo messaggio viene incollato in una nuova chat, considera tutto quanto sopra come contesto ufficiale del progetto.
+
+NON ripartire da zero.
+
+NON ricreare il progetto.
+
+NON rifare i modelli già presenti.
+
+Riparti esattamente da:
+
+```text
+python manage.py check
+```
+
+e poi dal test della sostituzione con:
+
+```json
+{
+    "set_id": 1,
+    "player_out": 1,
+    "player_in": 6,
+    "position": 1
+}
+```
+
+Il risultato atteso è:
+
+```text
+400
+Il giocatore entrante è già presente in campo.
+```
+
+Dopo questo test, procedere con la sostituzione valida usando:
+
+```text
+player_out = 1
+player_in = 9
+position = 1
+```
+
+e verificare il nuovo stato del Set.
+
+La priorità è continuare a sviluppare il progetto **passo passo e spiegando tutto**, mantenendo il backend come fonte di verità.
