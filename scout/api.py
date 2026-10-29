@@ -1,11 +1,11 @@
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from ninja.errors import HttpError
 from ninja import NinjaAPI
 from .models import  Team, Player, Match, Set, Lineup, Substitution, Touch
 from .schemas import (
-    SetSchema, SetCreateSchema, 
+    SetSchema, SetCreateSchema, ScorePointSchema,
     TeamSchema, TeamCreateSchema,  
     PlayerSchema, PlayerCreateSchema, 
     MatchSchema, MatchCreateSchema, 
@@ -71,11 +71,65 @@ def get_sets(request):
 def get_set(request, set_id: int):
     return get_object_or_404(Set, id=set_id)
 
+@api.post("/sets/{set_id}/point", response=SetSchema)
+def record_set_point(request, set_id: int, data: ScorePointSchema):
+    if data.scoring_team not in [Set.OUR, Set.OPPONENT]:
+        raise HttpError(
+            400,
+            "La squadra che ha conquistato il punto deve essere OUR oppure OPPONENT."
+        )
+
+    current_set = get_object_or_404(Set, id=set_id)
+
+    if data.scoring_team == Set.OUR and current_set.serving_team == Set.OPPONENT:
+        if not current_set.is_initialized():
+            raise HttpError(
+                400,
+                "Il set deve essere inizializzato prima di ruotare i giocatori."
+            )
+
+    with transaction.atomic():
+        if data.scoring_team == Set.OUR:
+            current_set.our_score += 1
+        else:
+            current_set.opponent_score += 1
+
+        if current_set.serving_team != data.scoring_team:
+            current_set.serving_team = data.scoring_team
+
+            if data.scoring_team == Set.OUR:
+                old_positions = [
+                    current_set.current_position_1_id,
+                    current_set.current_position_2_id,
+                    current_set.current_position_3_id,
+                    current_set.current_position_4_id,
+                    current_set.current_position_5_id,
+                    current_set.current_position_6_id,
+                ]
+                rotated_positions = old_positions[1:] + old_positions[:1]
+
+                for position, player_id in enumerate(rotated_positions, start=1):
+                    setattr(
+                        current_set,
+                        f"current_position_{position}_id",
+                        player_id,
+                    )
+
+        current_set.save()
+    return current_set
+
 @api.post("/sets", response=SetSchema)
 def create_set(request, data: SetCreateSchema):
+    if data.serving_team not in [Set.OUR, Set.OPPONENT]:
+        raise HttpError(
+            400,
+            "La squadra al servizio deve essere OUR oppure OPPONENT."
+        )
+
     new_set = Set.objects.create(
         match_id=data.match_id,
         number=data.number,
+        serving_team=data.serving_team,
     )
 
     return new_set
@@ -190,6 +244,19 @@ def create_substitution(request, data: SubstitutionCreateSchema):
             "Il giocatore entrante è già presente in campo."
         )
 
+    match_team_id = current_set.match.team_id
+
+    player_in = get_object_or_404(
+        Player,
+        id=data.player_in
+    )
+
+    if player_in.team_id != match_team_id:
+        raise HttpError(
+            400,
+            "Il giocatore entrante non appartiene alla squadra della partita."
+        )
+
     substitution = Substitution(
         set_id=data.set_id,
         player_out_id=data.player_out,
@@ -203,8 +270,9 @@ def create_substitution(request, data: SubstitutionCreateSchema):
         data.player_in
     )
 
-    substitution.save()
-    current_set.save()
+    with transaction.atomic():
+        substitution.save()
+        current_set.save()
 
     return substitution
 

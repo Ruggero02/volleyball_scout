@@ -52,6 +52,10 @@ class SetSchema(Schema):
 class SetCreateSchema(Schema):
     match_id: int
     number: int
+    serving_team: str
+
+class ScorePointSchema(Schema):
+    scoring_team: str
 
 class TouchSchema(Schema):
     id: int
