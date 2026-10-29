@@ -129,6 +129,38 @@ class Set(models.Model):
             self.current_position_5_id,
             self.current_position_6_id,
         ])
+
+
+class SetAction(models.Model):
+    POINT = "POINT"
+    SUBSTITUTION = "SUBSTITUTION"
+    TOUCH = "TOUCH"
+    ACTION_TYPE_CHOICES = [
+        (POINT, "Punto"),
+        (SUBSTITUTION, "Sostituzione"),
+        (TOUCH, "Tocco"),
+    ]
+
+    set = models.ForeignKey(
+        Set,
+        related_name="actions",
+        on_delete=models.CASCADE
+    )
+    action_type = models.CharField(
+        max_length=20,
+        choices=ACTION_TYPE_CHOICES
+    )
+    before_state = models.JSONField()
+    related_id = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.action_type} - {self.set}"
+
+
 class Lineup(models.Model):
     set = models.OneToOneField(
         Set,

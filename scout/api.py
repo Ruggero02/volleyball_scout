@@ -3,7 +3,7 @@ from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from ninja.errors import HttpError
 from ninja import NinjaAPI
-from .models import  Team, Player, Match, Set, Lineup, Substitution, Touch
+from .models import  Team, Player, Match, Set, SetAction, Lineup, Substitution, Touch
 from .schemas import (
     SetSchema, SetCreateSchema, ScorePointSchema,
     TeamSchema, TeamCreateSchema,  
@@ -14,6 +14,61 @@ from .schemas import (
     TouchSchema, TouchCreateSchema
 )
 api = NinjaAPI()
+
+
+def get_set_state_snapshot(current_set):
+    return {
+        "our_score": current_set.our_score,
+        "opponent_score": current_set.opponent_score,
+        "serving_team": current_set.serving_team,
+        "current_position_1_id": current_set.current_position_1_id,
+        "current_position_2_id": current_set.current_position_2_id,
+        "current_position_3_id": current_set.current_position_3_id,
+        "current_position_4_id": current_set.current_position_4_id,
+        "current_position_5_id": current_set.current_position_5_id,
+        "current_position_6_id": current_set.current_position_6_id,
+    }
+
+
+def apply_rally_point(current_set, scoring_team):
+    if scoring_team not in [Set.OUR, Set.OPPONENT]:
+        raise HttpError(
+            400,
+            "La squadra che ha conquistato il punto deve essere OUR oppure OPPONENT."
+        )
+
+    if scoring_team == Set.OUR and current_set.serving_team == Set.OPPONENT:
+        if not current_set.is_initialized():
+            raise HttpError(
+                400,
+                "Il set deve essere inizializzato prima di ruotare i giocatori."
+            )
+
+    if scoring_team == Set.OUR:
+        current_set.our_score += 1
+    else:
+        current_set.opponent_score += 1
+
+    if current_set.serving_team != scoring_team:
+        current_set.serving_team = scoring_team
+
+        if scoring_team == Set.OUR:
+            old_positions = [
+                current_set.current_position_1_id,
+                current_set.current_position_2_id,
+                current_set.current_position_3_id,
+                current_set.current_position_4_id,
+                current_set.current_position_5_id,
+                current_set.current_position_6_id,
+            ]
+            rotated_positions = old_positions[1:] + old_positions[:1]
+
+            for position, player_id in enumerate(rotated_positions, start=1):
+                setattr(
+                    current_set,
+                    f"current_position_{position}_id",
+                    player_id,
+                )
 
 @api.get("/test")
 def test(request):
@@ -73,49 +128,58 @@ def get_set(request, set_id: int):
 
 @api.post("/sets/{set_id}/point", response=SetSchema)
 def record_set_point(request, set_id: int, data: ScorePointSchema):
-    if data.scoring_team not in [Set.OUR, Set.OPPONENT]:
-        raise HttpError(
-            400,
-            "La squadra che ha conquistato il punto deve essere OUR oppure OPPONENT."
-        )
-
     current_set = get_object_or_404(Set, id=set_id)
 
-    if data.scoring_team == Set.OUR and current_set.serving_team == Set.OPPONENT:
-        if not current_set.is_initialized():
-            raise HttpError(
-                400,
-                "Il set deve essere inizializzato prima di ruotare i giocatori."
-            )
+    with transaction.atomic():
+        SetAction.objects.create(
+            set=current_set,
+            action_type=SetAction.POINT,
+            before_state=get_set_state_snapshot(current_set),
+        )
+        apply_rally_point(current_set, data.scoring_team)
+        current_set.save()
+    return current_set
+
+
+@api.post("/sets/{set_id}/undo", response=SetSchema)
+def undo_last_set_action(request, set_id: int):
+    current_set = get_object_or_404(Set, id=set_id)
+    last_action = current_set.actions.order_by("-created_at", "-id").first()
+
+    if last_action is None:
+        raise HttpError(
+            400,
+            "Non ci sono azioni da annullare in questo set."
+        )
+
+    if last_action.action_type not in [
+        SetAction.POINT,
+        SetAction.SUBSTITUTION,
+        SetAction.TOUCH,
+    ]:
+        raise HttpError(
+            400,
+            "Questo tipo di azione non può essere annullato."
+        )
 
     with transaction.atomic():
-        if data.scoring_team == Set.OUR:
-            current_set.our_score += 1
-        else:
-            current_set.opponent_score += 1
+        if last_action.action_type == SetAction.SUBSTITUTION:
+            Substitution.objects.filter(
+                id=last_action.related_id,
+                set=current_set,
+            ).delete()
+        elif last_action.action_type == SetAction.TOUCH:
+            Touch.objects.filter(
+                id=last_action.related_id,
+                set=current_set,
+            ).delete()
 
-        if current_set.serving_team != data.scoring_team:
-            current_set.serving_team = data.scoring_team
-
-            if data.scoring_team == Set.OUR:
-                old_positions = [
-                    current_set.current_position_1_id,
-                    current_set.current_position_2_id,
-                    current_set.current_position_3_id,
-                    current_set.current_position_4_id,
-                    current_set.current_position_5_id,
-                    current_set.current_position_6_id,
-                ]
-                rotated_positions = old_positions[1:] + old_positions[:1]
-
-                for position, player_id in enumerate(rotated_positions, start=1):
-                    setattr(
-                        current_set,
-                        f"current_position_{position}_id",
-                        player_id,
-                    )
+        for field, value in last_action.before_state.items():
+            setattr(current_set, field, value)
 
         current_set.save()
+        last_action.delete()
+
     return current_set
 
 @api.post("/sets", response=SetSchema)
@@ -270,9 +334,17 @@ def create_substitution(request, data: SubstitutionCreateSchema):
         data.player_in
     )
 
+    before_state = get_set_state_snapshot(current_set)
+
     with transaction.atomic():
         substitution.save()
         current_set.save()
+        SetAction.objects.create(
+            set=current_set,
+            action_type=SetAction.SUBSTITUTION,
+            related_id=substitution.id,
+            before_state=before_state,
+        )
 
     return substitution
 
@@ -301,6 +373,24 @@ def create_touch(request, data: TouchCreateSchema):
 
         raise HttpError(400, " ".join(messages))
 
-    touch.save()
+    current_set = get_object_or_404(Set, id=data.set_id)
+    before_state = get_set_state_snapshot(current_set)
+
+    with transaction.atomic():
+        touch.save()
+        SetAction.objects.create(
+            set=current_set,
+            action_type=SetAction.TOUCH,
+            related_id=touch.id,
+            before_state=before_state,
+        )
+
+        if touch.match.mode == Match.BASIC:
+            if touch.outcome == Touch.POINT:
+                apply_rally_point(current_set, Set.OUR)
+            elif touch.outcome == Touch.ERROR:
+                apply_rally_point(current_set, Set.OPPONENT)
+
+        current_set.save()
 
     return touch
